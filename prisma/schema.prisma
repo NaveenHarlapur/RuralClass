@@ -74,9 +74,12 @@ model Note {
 model Assignment {
   id          String       @id @default(cuid())
   title       String
-  courseId    String
+  description String       @default("")
+  subject     String       @default("General")
+  teacherName String       @default("Teacher")
+  courseId    String?
   dueDate     DateTime
-  course      Course       @relation(fields: [courseId], references: [id])
+  course      Course?      @relation(fields: [courseId], references: [id])
   submissions Submission[]
   createdAt   DateTime     @default(now())
 }

@@ -17,31 +17,78 @@ import {
   Calendar,
   MessageSquare,
   Loader2,
+  PlusCircle,
+  Users,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
+import { toast } from "sonner"
 
 export default function StudentDashboardPage() {
   const { user } = useAuth()
   const [data, setData] = useState<any>(null)
+  const [availableCourses, setAvailableCourses] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isEnrolling, setIsEnrolling] = useState<string | null>(null)
+
+
+  const fetchDashboard = async () => {
+    try {
+      const res = await fetch('/api/dashboard/student')
+      if (res.ok) {
+        const json = await res.json()
+        setData(json)
+      }
+    } catch (error) {
+      console.error("Failed to fetch dashboard", error)
+    }
+  }
+
+  const fetchAvailableCourses = async () => {
+    try {
+      const res = await fetch('/api/courses')
+      if (res.ok) {
+        const json = await res.json()
+        setAvailableCourses(json.courses || [])
+      }
+    } catch (error) {
+      console.error("Failed to fetch courses", error)
+    }
+  }
 
   useEffect(() => {
-    async function fetchDashboard() {
-      try {
-        const res = await fetch('/api/dashboard/student')
-        if (res.ok) {
-          const json = await res.json()
-          setData(json)
-        }
-      } catch (error) {
-        console.error("Failed to fetch dashboard", error)
-      } finally {
-        setIsLoading(false)
-      }
+    const loadAll = async () => {
+      setIsLoading(true)
+      await Promise.all([fetchDashboard(), fetchAvailableCourses()])
+      
+
+      
+      setIsLoading(false)
     }
-    fetchDashboard()
+    loadAll()
   }, [])
+
+  const handleEnroll = async (courseId: string) => {
+    setIsEnrolling(courseId)
+    try {
+      const res = await fetch('/api/courses/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId })
+      })
+      const result = await res.json()
+      if (res.ok) {
+        toast.success("Enrolled successfully!")
+        await fetchDashboard() // Refresh dashboard
+      } else {
+        toast.error(result.error || "Failed to enroll")
+      }
+    } catch (error) {
+      toast.error("An error occurred")
+    } finally {
+      setIsEnrolling(null)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -89,6 +136,8 @@ export default function StudentDashboardPage() {
     })
   })
 
+
+
   pendingAssignments = pendingAssignments.sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 3)
   recentNotes = recentNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4)
 
@@ -122,6 +171,9 @@ export default function StudentDashboardPage() {
       bgColor: "bg-chart-2/10",
     },
   ]
+
+  // Filter out already enrolled courses for discovery
+  const nonEnrolledCourses = availableCourses.filter(ac => !enrolledCourses.some((ec: any) => ec.id === ac.id))
 
   return (
     <div className="space-y-6">
@@ -173,7 +225,7 @@ export default function StudentDashboardPage() {
               </div>
               <Link href="/dashboard/student/notes">
                 <Button variant="ghost" size="sm">
-                  View All
+                   View All
                 </Button>
               </Link>
             </CardHeader>
@@ -252,6 +304,51 @@ export default function StudentDashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Discover Courses */}
+          {nonEnrolledCourses.length > 0 && (
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle className="text-lg">Discover Courses</CardTitle>
+                <CardDescription>Explore available subjects and join now</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {nonEnrolledCourses.slice(0, 4).map((course: any) => (
+                    <div key={course.id} className="flex flex-col justify-between rounded-xl border border-border/50 bg-muted/20 p-4">
+                      <div>
+                        <h4 className="font-semibold text-foreground">{course.title}</h4>
+                        <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{course.description || "Learn this technical course from expert teachers."}</p>
+                        <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            {course.students} students
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <BookOpen className="h-3 w-3" />
+                            {course.lessons} materials
+                          </span>
+                        </div>
+                      </div>
+                      <Button 
+                        className="mt-4 gap-2" 
+                        size="sm" 
+                        onClick={() => handleEnroll(course.id)}
+                        disabled={isEnrolling === course.id}
+                      >
+                        {isEnrolling === course.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <PlusCircle className="h-4 w-4" />
+                        )}
+                        Enroll Now
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Column - 1/3 width */}

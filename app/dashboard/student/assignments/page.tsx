@@ -1,61 +1,40 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { FileText, Calendar, Clock, Upload, Loader2, CheckCircle } from "lucide-react"
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
 export default function AssignmentsPage() {
-  const [data, setData] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchDashboard() {
+    async function fetchAssignments() {
       try {
-        const res = await fetch('/api/dashboard/student')
+        const res = await fetch("/api/assignments");
         if (res.ok) {
-          const json = await res.json()
-          setData(json)
+          const data = await res.json();
+          console.log("[Student] Fetched assignments from DB:", data.assignments);
+          setAssignments(data.assignments || []);
+        } else {
+          console.error("[Student] Failed to fetch assignments:", res.status);
         }
       } catch (error) {
-        console.error("Failed to fetch dashboard", error)
+        console.error("[Student] Fetch error:", error);
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
     }
-    fetchDashboard()
-  }, [])
+
+    fetchAssignments();
+  }, []);
 
   if (isLoading) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
-    )
+    );
   }
-
-  const enrolledCourses = data?.courses || []
-  let allAssignments: any[] = []
-
-  enrolledCourses.forEach((course: any) => {
-    course.assignments?.forEach((assignment: any) => {
-      const submission = data?.submissions?.find((s: any) => s.assignmentId === assignment.id)
-      allAssignments.push({
-        ...assignment,
-        courseName: course.title,
-        status: submission ? submission.status : 'pending',
-        daysLeft: Math.max(0, Math.ceil((new Date(assignment.dueDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24)))
-      })
-    })
-  })
-
-  // Sort: pending first (sorted by daysLeft), then submitted
-  allAssignments.sort((a, b) => {
-    if (a.status === 'pending' && b.status !== 'pending') return -1
-    if (a.status !== 'pending' && b.status === 'pending') return 1
-    return a.daysLeft - b.daysLeft
-  })
 
   return (
     <div className="space-y-6">
@@ -66,75 +45,37 @@ export default function AssignmentsPage() {
         </p>
       </div>
 
-      <div className="grid gap-4">
-        {allAssignments.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <FileText className="h-12 w-12 text-muted-foreground/50 mb-3" />
-              <p className="text-lg font-medium text-foreground">No assignments available</p>
-              <p className="text-sm text-muted-foreground">Enjoy your free time!</p>
-            </CardContent>
-          </Card>
-        ) : (
-          allAssignments.map((assignment: any) => (
-            <Card key={assignment.id} className="border-border/50 overflow-hidden">
-              <div className="flex flex-col sm:flex-row">
-                <div className="flex-1 p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-foreground">
-                          {assignment.title}
-                        </h3>
-                        {assignment.status === 'pending' && assignment.daysLeft <= 3 && (
-                          <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
-                            Due Soon
-                          </Badge>
-                        )}
-                        {assignment.status !== 'pending' && (
-                          <Badge variant="secondary" className="h-5 px-1.5 text-[10px] bg-green-500/10 text-green-600">
-                            <CheckCircle className="mr-1 h-3 w-3" />
-                            Submitted
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {assignment.courseName}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="h-4 w-4" />
-                      Due: {new Date(assignment.dueDate).toLocaleDateString()}
-                    </div>
-                    {assignment.status === 'pending' && (
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="h-4 w-4" />
-                        {assignment.daysLeft} days left
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="flex items-center justify-center bg-muted/30 p-6 sm:w-48 sm:border-l sm:border-t-0 border-t border-border/50">
-                  {assignment.status === 'pending' ? (
-                    <Button className="w-full gap-2">
-                      <Upload className="h-4 w-4" />
-                      Submit
-                    </Button>
-                  ) : (
-                    <Button variant="outline" className="w-full gap-2">
-                      View Submission
-                    </Button>
-                  )}
-                </div>
+      {assignments.length > 0 ? (
+        <div className="space-y-4">
+          {assignments.map((assignment) => (
+            <div
+              key={assignment.id}
+              className="rounded-xl border border-border bg-card p-5"
+            >
+              <h2 className="text-xl font-semibold">
+                {assignment.title}
+              </h2>
+
+              <p className="mt-2 text-muted-foreground">
+                {assignment.description}
+              </p>
+
+              <div className="mt-3 space-y-1 text-sm text-muted-foreground">
+                <p>Subject: {assignment.subject}</p>
+                <p>Teacher: {assignment.teacher_name}</p>
+                <p>Due Date: {new Date(assignment.due_date).toLocaleDateString()}</p>
+                <p>Created: {new Date(assignment.created_at).toLocaleDateString()}</p>
               </div>
-            </Card>
-          ))
-        )}
-      </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-20">
+          <h2 className="text-2xl font-semibold">
+            No assignments available
+          </h2>
+        </div>
+      )}
     </div>
-  )
+  );
 }

@@ -16,6 +16,9 @@ import {
   Upload,
   Loader2,
   GraduationCap,
+  Mail,
+  Phone,
+  Calendar
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
@@ -58,6 +61,7 @@ export default function TeacherDashboardPage() {
     totalSubmissions: 0,
   }
   const recentSubmissions = data?.recentSubmissions || []
+  const registeredStudents = data?.registeredStudents || []
 
   // Build active classes from courses with real counts
   const activeClasses = courses.map((course: any) => ({
@@ -125,10 +129,12 @@ export default function TeacherDashboardPage() {
               Upload Material
             </Button>
           </Link>
-          <Button size="sm" variant="outline" className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Assignment
-          </Button>
+          <Link href="/dashboard/teacher/assignments">
+            <Button size="sm" variant="outline" className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Assignment
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -276,6 +282,61 @@ export default function TeacherDashboardPage() {
           </Card>
         </div>
       </div>
+
+      {/* Registered Students List */}
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="text-lg">Registered Students</CardTitle>
+          <CardDescription>All students currently registered in the platform</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {registeredStudents.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <Users className="mb-3 h-12 w-12 text-muted-foreground/40" />
+              <p className="font-medium text-foreground">No students registered yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-muted-foreground uppercase bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-3 rounded-tl-lg">Name</th>
+                    <th className="px-4 py-3">Contact Info</th>
+                    <th className="px-4 py-3">Enrollment Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registeredStudents.map((student: any) => (
+                    <tr key={student.id} className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-4 font-medium text-foreground">
+                        {student.name}
+                      </td>
+                      <td className="px-4 py-4 space-y-1">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Mail className="h-3 w-3" />
+                          <span className="text-xs">{student.email}</span>
+                        </div>
+                        {student.phone && (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Phone className="h-3 w-3" />
+                            <span className="text-xs">{student.phone}</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          <span className="text-xs">{new Date(student.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

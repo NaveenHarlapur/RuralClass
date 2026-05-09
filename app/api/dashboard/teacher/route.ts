@@ -56,14 +56,27 @@ export async function GET() {
       return NextResponse.json({ error: 'Teacher not found or unauthorized' }, { status: 404 })
     }
 
+    // Fetch total registered students in the system
+    const totalStudentsCount = await prisma.user.count({
+      where: { role: 'student' }
+    })
+
+    // Fetch list of registered students
+    const registeredStudents = await prisma.user.findMany({
+      where: { role: 'student' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    })
+
     // Aggregate stats across all courses
     const courses = teacher.teachingCourses
-
-    // Unique students across all courses
-    const uniqueStudentIds = new Set<string>()
-    courses.forEach(course => {
-      course.enrollments.forEach(e => uniqueStudentIds.add(e.studentId))
-    })
 
     // Total materials uploaded
     const totalMaterials = courses.reduce((sum, c) => sum + c.notes.length, 0)
@@ -93,12 +106,13 @@ export async function GET() {
     return NextResponse.json({
       courses,
       stats: {
-        totalStudents: uniqueStudentIds.size,
+        totalStudents: totalStudentsCount,
         totalCourses: courses.length,
         totalMaterials,
         totalSubmissions: recentSubmissions.length,
       },
       recentSubmissions: recentSubmissions.slice(0, 5),
+      registeredStudents,
     })
 
   } catch (error) {

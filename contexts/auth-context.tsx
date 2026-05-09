@@ -80,11 +80,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    const role = user?.role;
     setUser(null);
+    localStorage.clear();
+    sessionStorage.clear();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch (e) {}
-  }, []);
+    
+    if (role === "teacher") {
+      window.location.href = "/login/teacher";
+    } else {
+      window.location.href = "/login/student";
+    }
+  }, [user]);
 
   const updateUser = useCallback((updates: Partial<User>) => {
     setUser((prev) => {

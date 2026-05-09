@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -58,7 +59,12 @@ const teacherNavItems = [
 
 export function DashboardSidebar({ collapsed, onToggle, role }: SidebarProps) {
   const pathname = usePathname()
+  const { logout } = useAuth()
   const navItems = role === "student" ? studentNavItems : teacherNavItems
+
+  const handleLogout = async () => {
+    await logout()
+  }
 
   return (
     <aside
@@ -130,18 +136,17 @@ export function DashboardSidebar({ collapsed, onToggle, role }: SidebarProps) {
             {!collapsed && <span>Settings</span>}
           </Button>
         </Link>
-        <Link href="/">
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start gap-3 text-sidebar-foreground hover:bg-sidebar-accent/50",
-              collapsed && "justify-center px-2"
-            )}
-          >
-            <LogOut className="h-5 w-5 shrink-0" />
-            {!collapsed && <span>Logout</span>}
-          </Button>
-        </Link>
+        <Button
+          variant="ghost"
+          onClick={handleLogout}
+          className={cn(
+            "w-full justify-start gap-3 text-sidebar-foreground hover:bg-sidebar-accent/50",
+            collapsed && "justify-center px-2"
+          )}
+        >
+          <LogOut className="h-5 w-5 shrink-0" />
+          {!collapsed && <span>Logout</span>}
+        </Button>
 
         {/* Toggle Button */}
         <Button
