@@ -1,74 +1,46 @@
-import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { cookies } from 'next/headers'
-import { verifyToken } from '@/lib/auth'
-
-const prisma = new PrismaClient()
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
 
 export async function GET(req: Request) {
   try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get('auth_token')?.value
+    console.log('[Student Materials] Fetching from Supabase...');
 
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { data, error } = await supabase
+      .from('materials')
+      .select('*')
+      .eq('status', 'published')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Student Materials] Supabase error:', error);
+      return NextResponse.json(
+        { error: error.message },
+        { status: 500 }
+      );
     }
 
-    const payload = await verifyToken(token)
-    if (!payload?.userId) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    console.log('[Student Materials] Fetched', data?.length || 0, 'materials');
 
-    const { searchParams } = new URL(req.url)
-    const courseFilter = searchParams.get('course')
-    const search = searchParams.get('search')?.toLowerCase()
+    // Map to the format the student downloads page expects
+    const materials = (data || []).map((m: any) => ({
+      id: String(m.id),
+      title: m.title || 'Untitled',
+      description: m.description || '',
+      subject: m.subject || 'General',
+      teacherName: m.uploaded_by || 'Teacher',
+      uploadDate: m.created_at,
+      type: m.file_type || 'pdf',
+      size: m.file_size || '—',
+      url: m.file_url || null,
+      offline: false,
+    }));
 
-    // Fetch all published notes from all teachers
-    const notes = await prisma.note.findMany({
-      where: {
-        status: 'published',
-        ...(courseFilter ? { course: { title: courseFilter } } : {}),
-      },
-      include: {
-        course: {
-          include: {
-            teacher: {
-              select: { id: true, name: true }
-            }
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    // Apply search filter in JS (case-insensitive on title)
-    const filtered = search
-      ? notes.filter(n =>
-          n.title.toLowerCase().includes(search) ||
-          n.course.title.toLowerCase().includes(search)
-        )
-      : notes
-
-    // Shape the response for the student
-    const materials = filtered.map(note => ({
-      id: note.id,
-      title: note.title,
-      description: note.description,
-      subject: note.course.title,
-      teacherName: note.course.teacher.name,
-      uploadDate: note.createdAt,
-      type: note.type || 'pdf',
-      size: note.size,
-      url: note.url,
-      offline: note.offline,
-    }))
-
-    return NextResponse.json(materials)
+    return NextResponse.json(materials);
   } catch (error) {
-    console.error('Student materials fetch error:', error)
+    console.error('[Student Materials] Server error:', error);
     return NextResponse.json(
       { error: 'Failed to fetch materials' },
       { status: 500 }
-    )
+    );
   }
 }

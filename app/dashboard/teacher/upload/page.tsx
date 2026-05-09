@@ -56,11 +56,11 @@ const COURSES = [
 interface Material {
   id: string
   title: string
-  size: string
-  type: string | null
+  file_size: string
+  file_type: string | null
   status: string
-  createdAt: string
-  course: { title: string } | null
+  created_at: string
+  subject: string | null
 }
 
 const ALLOWED_EXT = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.mp4', '.webm', '.mp3', '.zip']
@@ -151,31 +151,27 @@ export default function UploadPage() {
     const timer = setInterval(() => setUploadProgress(p => p >= 90 ? 90 : p + 8), 180)
 
     try {
-      const file = selectedFiles[0] ?? null
-      const payload = {
-        title: title.trim(),
-        description: description.trim(),
-        subject: selectedCourse,          // course title as string
-        courseId: null,                   // resolved server-side if needed
-        size: file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : '—',
-        type: file ? file.name.split('.').pop()?.toLowerCase() : 'none',
-        status,
-        url: file ? `/uploads/${encodeURIComponent(file.name)}` : '',
-        offline: lowBandwidth,
+      const formData = new FormData()
+      formData.append('title', title.trim())
+      formData.append('subject', selectedCourse)
+      formData.append('description', description.trim())
+      formData.append('status', status)
+
+      if (selectedFiles[0]) {
+        formData.append('file', selectedFiles[0])
       }
 
       const res = await fetch('/api/teacher/materials', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: formData,
       })
 
       clearInterval(timer)
       setUploadProgress(100)
 
       if (res.ok) {
-        const created: Material = await res.json()
-        setMaterials(prev => [created, ...prev])
+        const result = await res.json()
+        fetchMaterials()
         setSelectedFiles([])
         setTitle('')
         setSelectedCourse('')
@@ -389,12 +385,12 @@ export default function UploadPage() {
                     <div key={m.id} className="rounded-lg border border-border/50 bg-muted/30 p-3">
                       <div className="flex items-start gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <MaterialIcon type={m.type} />
+                          <MaterialIcon type={m.file_type} />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-foreground">{m.title}</p>
                           <p className="text-xs text-muted-foreground">
-                            {m.size} &bull; {new Date(m.createdAt).toLocaleDateString()}
+                            {m.file_size} &bull; {new Date(m.created_at).toLocaleDateString()}
                           </p>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             {m.status === 'draft' ? (
@@ -405,9 +401,9 @@ export default function UploadPage() {
                                 Published
                               </Badge>
                             )}
-                            {m.course?.title && (
+                            {m.subject && (
                               <span className="truncate text-[10px] text-muted-foreground">
-                                {m.course.title}
+                                {m.subject}
                               </span>
                             )}
                           </div>

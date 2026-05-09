@@ -41,6 +41,7 @@ const studentNavItems = [
   { icon: Bot, label: "AI Tools", href: "/dashboard/student/ai-tools" },
   { icon: Download, label: "Downloads", href: "/dashboard/student/downloads" },
   { icon: Bell, label: "Announcements", href: "/dashboard/student/announcements" },
+  { icon: Calendar, label: "Attendance", href: "/dashboard/student/attendance" },
   { icon: TrendingUp, label: "Progress", href: "/dashboard/student/progress" },
   { icon: MessageSquare, label: "Discussions", href: "/dashboard/student/discussions" },
   { icon: WifiOff, label: "Offline Content", href: "/dashboard/student/offline" },

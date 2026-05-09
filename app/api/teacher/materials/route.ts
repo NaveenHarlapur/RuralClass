@@ -1,109 +1,148 @@
-import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { cookies } from 'next/headers'
-import { verifyToken } from '@/lib/auth'
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
+import { cookies } from 'next/headers';
+import { verifyToken } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient()
+async function getTeacherName(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('auth_token')?.value;
+  if (!token) return null;
 
-async function getAuthenticatedTeacherId(): Promise<string | null> {
-  const cookieStore = await cookies()
-  const token = cookieStore.get('auth_token')?.value
-  if (!token) return null
-
-  const payload = await verifyToken(token)
-  if (!payload?.userId) return null
+  const payload = await verifyToken(token);
+  if (!payload?.userId) return null;
 
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
-    select: { id: true, role: true }
-  })
+    select: { name: true, role: true },
+  });
 
-  if (!user || user.role !== 'teacher') return null
-  return user.id
+  if (!user || user.role !== 'teacher') return null;
+  return user.name;
 }
 
+// GET: Fetch all materials from Supabase
 export async function GET() {
-  const teacherId = await getAuthenticatedTeacherId()
-  if (!teacherId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   try {
-    const materials = await prisma.note.findMany({
-      where: { course: { teacherId } },
-      include: { course: true },
-      orderBy: { createdAt: 'desc' },
-    })
-    return NextResponse.json(materials)
+    const { data, error } = await supabase
+      .from('materials')
+      .select('*')
+      .eq('status', 'published')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('GET materials error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json(data || []);
   } catch (error) {
-    console.error('Fetch materials error:', error)
-    return NextResponse.json({ error: 'Failed to fetch materials' }, { status: 500 })
+    console.error('GET materials catch:', error);
+    return NextResponse.json({ error: 'Failed to fetch materials' }, { status: 500 });
   }
 }
 
+// POST: Upload file to Supabase Storage + save metadata
 export async function POST(req: Request) {
-  const teacherId = await getAuthenticatedTeacherId()
-  if (!teacherId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   try {
-    const body = await req.json()
-    const { title, description, subject, courseId: rawCourseId, size, type, status, url, offline } = body
+    const teacherName = await getTeacherName();
+    if (!teacherName) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+    const title = formData.get('title') as string;
+    const subject = formData.get('subject') as string;
+    const description = formData.get('description') as string;
+    const status = formData.get('status') as string || 'published';
 
     if (!title) {
-      return NextResponse.json({ error: 'Title is required' }, { status: 400 })
-    }
-    if (!subject && !rawCourseId) {
-      return NextResponse.json({ error: 'Please select a subject / course' }, { status: 400 })
+      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
     }
 
-    // Resolve courseId from subject name or use provided id
-    let courseId = rawCourseId as string | null
+    let fileUrl = '';
+    let fileName = '';
+    let fileType = 'none';
+    let fileSize = '—';
 
-    if (!courseId && subject) {
-      const matched = await prisma.course.findFirst({
-        where: { title: subject, teacherId }
-      })
+    if (file && file.size > 0) {
+      fileName = file.name;
+      fileType = file.name.split('.').pop()?.toLowerCase() || 'unknown';
+      fileSize = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
 
-      if (!matched) {
-        // Auto-create the course so uploads always succeed
-        const created = await prisma.course.create({
-          data: {
-            title: subject,
-            description: `${subject} course`,
-            teacherId,
-          }
-        })
-        courseId = created.id
-      } else {
-        courseId = matched.id
+      // Create unique file path
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${timestamp}_${safeName}`;
+
+      console.log('[Upload] Uploading file to Supabase Storage:', filePath);
+
+      // Convert File to ArrayBuffer for upload
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('study-materials')
+        .upload(filePath, buffer, {
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('[Upload] Storage upload error:', uploadError);
+        return NextResponse.json(
+          { error: 'File upload failed: ' + uploadError.message },
+          { status: 500 }
+        );
       }
+
+      console.log('[Upload] File uploaded successfully:', uploadData.path);
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('study-materials')
+        .getPublicUrl(uploadData.path);
+
+      fileUrl = urlData.publicUrl;
+      console.log('[Upload] Public URL:', fileUrl);
     }
 
-    // Ownership check
-    const course = await prisma.course.findUnique({ where: { id: courseId! } })
-    if (!course || course.teacherId !== teacherId) {
-      return NextResponse.json({ error: 'Unauthorized course' }, { status: 403 })
+    // Save metadata to Supabase materials table
+    const { data: material, error: insertError } = await supabase
+      .from('materials')
+      .insert([
+        {
+          title,
+          subject: subject || 'General',
+          description: description || '',
+          file_name: fileName,
+          file_url: fileUrl,
+          file_type: fileType,
+          file_size: fileSize,
+          uploaded_by: teacherName,
+          status,
+        },
+      ])
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('[Upload] Insert error:', insertError);
+      return NextResponse.json(
+        { error: 'Failed to save material: ' + insertError.message },
+        { status: 500 }
+      );
     }
 
-    const material = await prisma.note.create({
-      data: {
-        title,
-        description: description || null,
-        courseId: courseId!,
-        size: size || '—',
-        type: type || 'pdf',
-        status: status || 'published',
-        url: url || '',
-        offline: offline || false,
-      },
-      include: { course: true }
-    })
+    console.log('[Upload] Material saved:', material.id, material.title);
 
-    return NextResponse.json(material)
+    return NextResponse.json({
+      success: true,
+      material,
+    });
   } catch (error) {
-    console.error('Upload material error:', error)
-    return NextResponse.json({ error: 'Failed to upload material' }, { status: 500 })
+    console.error('[Upload] Server error:', error);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

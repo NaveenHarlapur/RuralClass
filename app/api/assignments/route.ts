@@ -44,7 +44,8 @@ export async function POST(req: Request) {
           teacher_name: teacherName,
         },
       ])
-      .select();
+      .select()
+      .single();
 
     if (error) {
       console.error("POST Error:", error);

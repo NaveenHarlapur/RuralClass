@@ -5,6 +5,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/contexts/auth-context"
+import { toast } from "sonner"
 import {
   Download,
   FileText,
@@ -39,6 +42,7 @@ function FileIcon({ type }: { type: string }) {
 }
 
 export default function DownloadsPage() {
+  const { user } = useAuth()
   const [materials, setMaterials] = useState<Material[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -62,6 +66,48 @@ export default function DownloadsPage() {
       m.teacherName.toLowerCase().includes(q)
     )
   }, [materials, search])
+
+  const handleDownload = async (item: Material) => {
+    try {
+      if (!user?.email) return;
+
+      // Step 5: Prevent duplicate downloads
+      const { data: existing } = await supabase
+        .from("downloads")
+        .select("id")
+        .eq("student_email", user.email)
+        .eq("file_url", item.url)
+        .single();
+
+      if (!existing) {
+        // Step 4: Save download record
+        const { error } = await supabase.from("downloads").insert([
+          {
+            student_name: user.name || "Student",
+            student_email: user.email,
+            title: item.title,
+            file_name: item.title, // using title as file name for display
+            file_url: item.url,
+            file_type: item.type,
+            file_size: item.size,
+          }
+        ]);
+
+        if (error) {
+          console.log("[Download] Insert error:", error);
+        } else {
+          toast.success("Added to offline content");
+        }
+      }
+
+      // Step 3: Trigger real download
+      if (item.url) {
+        window.open(item.url, '_blank');
+      }
+    } catch (error) {
+      console.log("[Download] Error:", error);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -154,16 +200,22 @@ export default function DownloadsPage() {
                   )}
                   {item.url ? (
                     <>
-                      <Button variant="outline" size="sm" className="gap-2" asChild>
-                        <a href={item.url} download target="_blank" rel="noopener noreferrer">
-                          <Download className="h-3.5 w-3.5" />
-                          Download
-                        </a>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="gap-2"
+                        onClick={() => handleDownload(item)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Download
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                        <a href={item.url} target="_blank" rel="noopener noreferrer" title="Open">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8"
+                        onClick={() => item.url && window.open(item.url, '_blank')}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
                       </Button>
                     </>
                   ) : (
