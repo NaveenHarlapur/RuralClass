@@ -48,13 +48,42 @@ export default function DownloadsPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    fetch('/api/student/materials')
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Material[]) => {
-        if (Array.isArray(data)) setMaterials(data)
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false))
+    const fetchMaterials = async () => {
+      try {
+        setIsLoading(true)
+        const { data, error } = await supabase
+          .from('study_materials')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          console.log("[Downloads] Fetch error:", error)
+          return
+        }
+
+        if (data) {
+          const mapped: Material[] = data.map(m => ({
+            id: String(m.id),
+            title: m.title,
+            description: m.description,
+            subject: m.subject || 'General',
+            teacherName: m.teacher_name || 'Teacher',
+            uploadDate: m.created_at,
+            type: m.file_name?.split('.').pop() || 'file',
+            size: 'Unknown', // We don't store size in the new table yet
+            url: m.file_url,
+            offline: false // This will be checked against local downloads if needed
+          }))
+          setMaterials(mapped)
+        }
+      } catch (err) {
+        console.log("[Downloads] Error:", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchMaterials()
   }, [])
 
   const filtered = useMemo(() => {
@@ -154,16 +183,10 @@ export default function DownloadsPage() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Download className="mb-3 h-12 w-12 text-muted-foreground/50" />
-            {materials.length === 0 ? (
-              <>
-                <p className="text-lg font-medium text-foreground">No materials available</p>
-                <p className="text-sm text-muted-foreground">
-                  Your teachers haven&apos;t uploaded any files yet.
-                </p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">No results match your search.</p>
-            )}
+            <p className="text-lg font-medium text-foreground">No study materials available</p>
+            <p className="text-sm text-muted-foreground">
+              Your teachers haven&apos;t uploaded any materials yet.
+            </p>
           </CardContent>
         </Card>
       ) : (

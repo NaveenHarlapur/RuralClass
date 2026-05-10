@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle, XCircle, Calendar, PieChart, Info } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Calendar, PieChart, Info, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,11 +41,26 @@ export default function StudentAttendancePage() {
     fetchAttendance();
   }, [user]);
 
-  // Calculations
-  const totalClasses = attendance.length;
-  const totalPresent = attendance.filter(a => a.status === "Present").length;
-  const totalAbsent = attendance.filter(a => a.status === "Absent").length;
-  const attendancePercentage = totalClasses > 0 ? (totalPresent / totalClasses) * 100 : 0;
+  // Calculations (Cumulative)
+  const totalRecords = attendance.length;
+  const totalPresent = attendance.filter(a => a.status === "PRESENT").length;
+  const totalAbsent = attendance.filter(a => a.status === "ABSENT").length;
+  
+  const uniqueNoClassDates = [...new Set(
+    attendance
+      .filter(a => a.status === "NO_CLASS")
+      .map(a => a.attendance_date)
+  )];
+  
+  const uniqueClassDates = [...new Set(
+    attendance.map(a => a.attendance_date)
+  )];
+
+  const totalClasses = uniqueClassDates.length;
+  const totalNoClass = uniqueNoClassDates.length;
+  
+  const totalValidClasses = totalClasses - totalNoClass;
+  const attendancePercentage = totalValidClasses > 0 ? (totalPresent / totalValidClasses) * 100 : 0;
 
   if (isLoading) {
     return (
@@ -63,8 +78,8 @@ export default function StudentAttendancePage() {
         <p className="text-muted-foreground">Monitor your attendance records and performance</p>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Overview Cards (Cumulative) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="border-border/50 bg-card/50">
           <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm font-medium">Total Classes</CardTitle>
@@ -90,6 +105,15 @@ export default function StudentAttendancePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-500">{totalAbsent}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/50 bg-card/50">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-orange-500">No Class</CardTitle>
+            <Clock className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-500">{totalNoClass}</div>
           </CardContent>
         </Card>
         <Card className="border-border/50 bg-card/50">
@@ -125,15 +149,20 @@ export default function StudentAttendancePage() {
                     <tr key={record.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">{new Date(record.attendance_date).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
-                        {record.status === "Present" ? (
+                        {record.status === "PRESENT" ? (
                           <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20 gap-1">
                             <CheckCircle className="h-3 w-3" />
                             Present
                           </Badge>
-                        ) : (
+                        ) : record.status === "ABSENT" ? (
                           <Badge variant="outline" className="text-red-500 border-red-500/20 gap-1">
                             <XCircle className="h-3 w-3" />
                             Absent
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-orange-500 border-orange-500/20 gap-1">
+                            <Clock className="h-3 w-3" />
+                            No Class
                           </Badge>
                         )}
                       </td>

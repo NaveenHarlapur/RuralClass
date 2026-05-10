@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/auth-context"
-import { FileText, Calendar, Clock, Loader2 } from "lucide-react"
+import { FileText, Calendar, Clock, Loader2, Trash2 } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 
 export default function AssignmentsPage() {
   const { user } = useAuth()
@@ -90,6 +91,43 @@ export default function AssignmentsPage() {
     }
   }
 
+  const handleDelete = async (assignment: any) => {
+    const confirmed = window.confirm("Are you sure you want to delete this assignment?")
+    if (!confirmed) return
+
+    try {
+      // Delete from assignment_submissions first (foreign key/related data)
+      const { error: subError } = await supabase
+        .from("assignment_submissions")
+        .delete()
+        .eq("assignment_id", assignment.id)
+
+      if (subError) {
+        console.log("SUBMISSION DELETE ERROR:", subError)
+        // We continue even if subError, because assignment might not have submissions
+      }
+
+      // Delete the assignment
+      const { error: assignError } = await supabase
+        .from("assignments")
+        .delete()
+        .eq("id", assignment.id)
+
+      if (assignError) {
+        console.log("ASSIGNMENT DELETE ERROR:", assignError)
+        toast.error("Failed to delete assignment")
+        return
+      }
+
+      // Success
+      toast.success("Assignment deleted successfully")
+      setAssignments(prev => prev.filter(a => a.id !== assignment.id))
+    } catch (error) {
+      console.log("DELETE ERROR:", error)
+      toast.error("An error occurred during deletion")
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight text-foreground">Create Assignment</h1>
@@ -145,17 +183,28 @@ export default function AssignmentsPage() {
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
-      ) : assignments.length > 0 && (
+      ) : assignments.length > 0 ? (
         <div className="space-y-4 pt-4">
           <h2 className="text-xl font-bold tracking-tight text-foreground">Recently Created Assignments</h2>
           <div className="grid gap-4">
             {assignments.map((assignment: any) => (
-              <Card key={assignment.id} className="border-border/50">
+              <Card key={assignment.id} className="border-border/50 relative">
                 <CardContent className="flex flex-col sm:flex-row gap-4 p-6">
                   <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-primary" />
-                      <h3 className="font-semibold text-lg">{assignment.title}</h3>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-primary" />
+                        <h3 className="font-semibold text-lg">{assignment.title}</h3>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDelete(assignment)}
+                        title="Delete Assignment"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                     <p className="text-sm text-muted-foreground line-clamp-2">
                       {assignment.description}
@@ -175,6 +224,12 @@ export default function AssignmentsPage() {
               </Card>
             ))}
           </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-xl border-border/50">
+          <FileText className="h-12 w-12 text-muted-foreground/30 mb-3" />
+          <p className="text-lg font-medium text-foreground">No assignments created</p>
+          <p className="text-sm text-muted-foreground mt-1">Start by creating your first assignment above.</p>
         </div>
       )}
     </div>

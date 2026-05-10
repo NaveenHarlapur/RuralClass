@@ -1,19 +1,49 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
+import { useRouter } from "next/navigation"
 
 export default function TeacherDashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const { user } = useAuth()
+  const { user, isLoading } = useAuth()
+  const router = useRouter()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      console.log("[Layout] No user found, redirecting to login...");
+      router.replace("/login/teacher");
+    }
+  }, [user, isLoading, router]);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-muted-foreground animate-pulse">Loading Teacher Dashboard...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background text-center px-4">
+        <h2 className="text-xl font-semibold">Session Required</h2>
+        <p className="text-muted-foreground">Please sign in to access the teacher dashboard.</p>
+        <div className="h-1.5 w-32 bg-primary/20 overflow-hidden rounded-full">
+          <div className="h-full bg-primary animate-progress-indefinite" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

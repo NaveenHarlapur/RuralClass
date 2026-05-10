@@ -45,13 +45,15 @@ export function DashboardHeader({
   userRole = "Student",
 }: HeaderProps) {
   const { setTheme, theme } = useTheme()
-  const { user, logout } = useAuth()
+  const { user, signOut } = useAuth()
   const router = useRouter()
   
   const handleLogout = async () => {
-    await logout()
-    window.location.href = "/"
+    await signOut()
   }
+
+  const displayFullName = user?.full_name || userName;
+  const displayRole = user?.role ? `${user.role.charAt(0).toUpperCase() + user.role.slice(1)}${user.college ? ` - ${user.college}` : ""}` : userRole;
 
   return (
     <header
@@ -177,12 +179,12 @@ export function DashboardHeader({
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user?.avatar || ""} />
                 <AvatarFallback className="bg-primary/10 text-primary">
-                  {userName ? userName.charAt(0).toUpperCase() : "U"}
+                  {displayFullName ? displayFullName.charAt(0).toUpperCase() : "U"}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden text-left md:block">
-                <p className="text-sm font-medium">{userName}</p>
-                <p className="text-xs text-muted-foreground">{userRole}</p>
+                <p className="text-sm font-medium">{displayFullName}</p>
+                <p className="text-xs text-muted-foreground">{displayRole}</p>
               </div>
             </Button>
           </DropdownMenuTrigger>

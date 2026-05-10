@@ -1,106 +1,71 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 export interface User {
-  id: string;
-  name: string;
+  id?: string;
+  full_name: string;
   email: string;
-  role: "student" | "teacher" | "admin";
-  avatar?: string;
+  phone: string;
+  role: "student" | "teacher";
   college?: string;
-  department?: string;
-  enrollmentNumber?: string;
-  phone?: string;
-  preferredLanguage?: string;
-  dataSaverMode?: boolean;
-  offlineMode?: boolean;
+  language?: string;
+  created_at?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string, role: "student" | "teacher") => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
-  updateUser: (updates: Partial<User>) => void;
+  signOut: () => void;
+  refreshUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Removed mock users
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadUser() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data.user);
+  const refreshUser = () => {
+    if (typeof window === "undefined") return;
+    
+    setIsLoading(true);
+    try {
+      const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+      const currentUserRaw = localStorage.getItem("currentUser");
+      
+      if (isLoggedIn && currentUserRaw) {
+        const parsedUser = JSON.parse(currentUserRaw);
+        if (parsedUser && typeof parsedUser === 'object') {
+          setUser(parsedUser as User);
         } else {
           setUser(null);
         }
-      } catch (err) {
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadUser();
-  }, []);
-
-  const login = useCallback(async (email: string, password: string, role: "student" | "teacher") => {
-    setIsLoading(true);
-    
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      
-      const data = await res.json();
-      
-      if (res.ok) {
-        setUser(data.user);
-        setIsLoading(false);
-        return { success: true };
       } else {
-        setIsLoading(false);
-        return { success: false, error: data.error || "Invalid email or password" };
+        setUser(null);
       }
     } catch (error) {
+      console.error("[AuthContext] Error refreshing user:", error);
+      setUser(null);
+    } finally {
       setIsLoading(false);
-      return { success: false, error: "Something went wrong" };
     }
+  };
+
+  useEffect(() => {
+    // Initial load
+    refreshUser();
   }, []);
 
-  const logout = useCallback(async () => {
-    const role = user?.role;
+  // Step 7: Logout
+  const signOut = () => {
+    localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("currentUser");
     setUser(null);
-    localStorage.clear();
-    sessionStorage.clear();
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch (e) {}
-    
-    if (role === "teacher") {
-      window.location.href = "/login/teacher";
-    } else {
-      window.location.href = "/login/student";
-    }
-  }, [user]);
-
-  const updateUser = useCallback((updates: Partial<User>) => {
-    setUser((prev) => {
-      if (!prev) return null;
-      return { ...prev, ...updates };
-    });
-  }, []);
+    window.location.href = "/";
+  };
 
   return (
     <AuthContext.Provider
@@ -108,9 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isLoading,
         isAuthenticated: !!user,
-        login,
-        logout,
-        updateUser,
+        signOut,
+        refreshUser
       }}
     >
       {children}

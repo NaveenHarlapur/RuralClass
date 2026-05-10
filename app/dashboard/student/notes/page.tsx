@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { supabase } from "@/lib/supabase"
 import {
   Select,
   SelectContent,
@@ -64,13 +65,42 @@ export default function NotesPage() {
   const [selectedSubject, setSelectedSubject] = useState(ALL_SUBJECTS)
 
   useEffect(() => {
-    fetch('/api/student/materials')
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Material[]) => {
-        if (Array.isArray(data)) setMaterials(data)
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false))
+    const fetchMaterials = async () => {
+      try {
+        setIsLoading(true)
+        const { data, error } = await supabase
+          .from('study_materials')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          console.log("[Notes] Fetch error:", error)
+          return
+        }
+
+        if (data) {
+          const mapped: Material[] = data.map(m => ({
+            id: String(m.id),
+            title: m.title,
+            description: m.description,
+            subject: m.subject || 'General',
+            teacherName: m.teacher_name || 'Teacher',
+            uploadDate: m.created_at,
+            type: m.file_name?.split('.').pop() || 'file',
+            size: 'Unknown',
+            url: m.file_url,
+            offline: false
+          }))
+          setMaterials(mapped)
+        }
+      } catch (err) {
+        console.log("[Notes] Error:", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchMaterials()
   }, [])
 
   // Unique subjects for filter dropdown

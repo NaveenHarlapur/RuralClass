@@ -60,11 +60,11 @@ const teacherNavItems = [
 
 export function DashboardSidebar({ collapsed, onToggle, role }: SidebarProps) {
   const pathname = usePathname()
-  const { logout } = useAuth()
+  const { signOut } = useAuth()
   const navItems = role === "student" ? studentNavItems : teacherNavItems
 
   const handleLogout = async () => {
-    await logout()
+    await signOut()
   }
 
   return (

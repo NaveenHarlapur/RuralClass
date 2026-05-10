@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
-import { Bell, Clock, Loader2, Send, Megaphone } from "lucide-react"
+import { Bell, Clock, Loader2, Send, Megaphone, Trash2 } from "lucide-react"
 
 export default function TeacherAnnouncementsPage() {
   const { user } = useAuth()
@@ -90,6 +90,34 @@ export default function TeacherAnnouncementsPage() {
     }
   }
 
+  const handleDelete = async (ann: any) => {
+    const confirmed = window.confirm("Are you sure you want to delete this announcement?")
+    if (!confirmed) return
+
+    try {
+      const { error } = await supabase
+        .from("announcements")
+        .delete()
+        .eq("id", ann.id)
+
+      if (error) {
+        console.log(error)
+        toast.error("Failed to delete announcement")
+        return
+      }
+
+      // Success
+      toast.success("Announcement deleted successfully")
+      // Remove instantly from UI
+      setAnnouncements(prev => prev.filter(a => a.id !== ann.id))
+      // Refresh automatically (already handled by state update, but can call fetch if needed)
+      // fetchAnnouncements() 
+    } catch (error) {
+      console.log(error)
+      toast.error("An error occurred during deletion")
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -157,13 +185,24 @@ export default function TeacherAnnouncementsPage() {
           </h2>
           <div className="grid gap-4">
             {announcements.map((ann: any) => (
-              <Card key={ann.id} className="border-border/50">
-                <CardHeader className="pb-3">
+              <Card key={ann.id} className="border-border/50 relative">
+                <CardHeader className="pb-3 pr-12">
                   <div className="space-y-1">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Bell className="h-4 w-4 text-primary" />
-                      {ann.title}
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Bell className="h-4 w-4 text-primary" />
+                        {ann.title}
+                      </CardTitle>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-4 right-4 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDelete(ann)}
+                        title="Delete Announcement"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                     <CardDescription className="flex items-center gap-2">
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -187,7 +226,7 @@ export default function TeacherAnnouncementsPage() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Megaphone className="h-12 w-12 text-muted-foreground/50 mb-3" />
-            <p className="text-lg font-medium text-foreground">No announcements yet</p>
+            <p className="text-lg font-medium text-foreground">No announcements available</p>
             <p className="text-sm text-muted-foreground">Post your first announcement above</p>
           </CardContent>
         </Card>

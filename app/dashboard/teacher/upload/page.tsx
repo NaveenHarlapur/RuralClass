@@ -28,6 +28,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/contexts/auth-context"
 
 // ── Static course list — always available, no API needed ──
 const COURSES = [
@@ -54,13 +56,14 @@ const COURSES = [
 ]
 
 interface Material {
-  id: string
+  id: number
   title: string
-  file_size: string
-  file_type: string | null
-  status: string
-  created_at: string
   subject: string | null
+  description: string | null
+  file_name: string | null
+  file_url: string
+  teacher_name: string | null
+  created_at: string
 }
 
 const ALLOWED_EXT = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.mp4', '.webm', '.mp3', '.zip']
@@ -94,14 +97,28 @@ export default function UploadPage() {
   const [description, setDescription] = useState('')
   const [lowBandwidth, setLowBandwidth] = useState(false)
 
+  const { user } = useAuth()
+
   // ── Fetch recent uploads ─────────────────────────────────
-  const fetchMaterials = useCallback(() => {
+  const fetchMaterials = useCallback(async () => {
     setMaterialsLoading(true)
-    fetch('/api/teacher/materials')
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Material[]) => { if (Array.isArray(data)) setMaterials(data) })
-      .catch(() => {})
-      .finally(() => setMaterialsLoading(false))
+    try {
+      const { data, error } = await supabase
+        .from('study_materials')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.log("FETCH ERROR:", error)
+        return
+      }
+      
+      if (data) setMaterials(data)
+    } catch (err) {
+      console.log("FETCH ERROR:", err)
+    } finally {
+      setMaterialsLoading(false)
+    }
   }, [])
 
   useEffect(() => { fetchMaterials() }, [fetchMaterials])
@@ -141,52 +158,74 @@ export default function UploadPage() {
   const handleSubmit = async (status: 'published' | 'draft') => {
     if (!title.trim()) { toast.error('Please enter a title'); return }
     if (!selectedCourse) { toast.error('Please select a subject / course'); return }
-    if (selectedFiles.length === 0 && status === 'published') {
-      toast.error('Please select at least one file to upload')
+    if (selectedFiles.length === 0) {
+      toast.error('Please select a file to upload')
       return
     }
 
+    const selectedFile = selectedFiles[0]
     setIsUploading(true)
     setUploadProgress(10)
-    const timer = setInterval(() => setUploadProgress(p => p >= 90 ? 90 : p + 8), 180)
 
     try {
-      const formData = new FormData()
-      formData.append('title', title.trim())
-      formData.append('subject', selectedCourse)
-      formData.append('description', description.trim())
-      formData.append('status', status)
+      // STEP 1: Upload file to Supabase Storage
+      const fileName = `${Date.now()}-${selectedFile.name}`
+      setUploadProgress(30)
 
-      if (selectedFiles[0]) {
-        formData.append('file', selectedFiles[0])
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("study-materials")
+        .upload(fileName, selectedFile)
+
+      if (uploadError) {
+        console.log("UPLOAD ERROR:", uploadError)
+        toast.error(`Upload failed: ${uploadError.message}`)
+        throw uploadError
       }
 
-      const res = await fetch('/api/teacher/materials', {
-        method: 'POST',
-        body: formData,
-      })
+      setUploadProgress(70)
 
-      clearInterval(timer)
+      // STEP 2: Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from("study-materials")
+        .getPublicUrl(fileName)
+
+      const fileUrl = publicUrlData.publicUrl
+
+      // STEP 3: Save metadata into database
+      const { error: dbError } = await supabase.from("study_materials").insert([
+        {
+          title: title.trim(),
+          subject: selectedCourse,
+          description: description.trim(),
+          file_name: selectedFile.name,
+          file_url: fileUrl,
+          teacher_name: user?.name || "Teacher"
+        }
+      ])
+
+      if (dbError) {
+        console.log("DB ERROR:", dbError)
+        toast.error(`Failed to save metadata: ${dbError.message}`)
+        throw dbError
+      }
+
       setUploadProgress(100)
-
-      if (res.ok) {
-        const result = await res.json()
-        fetchMaterials()
-        setSelectedFiles([])
-        setTitle('')
-        setSelectedCourse('')
-        setDescription('')
-        setLowBandwidth(false)
-        toast.success(status === 'published' ? '✅ Material uploaded!' : '📝 Draft saved!')
-      } else {
-        const err = await res.json().catch(() => ({}))
-        toast.error(err.error || 'Upload failed — please try again')
-      }
-    } catch {
-      clearInterval(timer)
-      toast.error('Network error — please try again')
+      toast.success("Material uploaded successfully")
+      
+      // Reset form
+      fetchMaterials()
+      setSelectedFiles([])
+      setTitle('')
+      setSelectedCourse('')
+      setDescription('')
+    } catch (error: any) {
+      console.log("FINAL ERROR:", error)
+      toast.error(error.message || 'An unexpected error occurred')
     } finally {
-      setTimeout(() => { setIsUploading(false); setUploadProgress(0) }, 600)
+      setTimeout(() => { 
+        setIsUploading(false)
+        setUploadProgress(0) 
+      }, 600)
     }
   }
 
@@ -384,23 +423,16 @@ export default function UploadPage() {
                   {materials.map(m => (
                     <div key={m.id} className="rounded-lg border border-border/50 bg-muted/30 p-3">
                       <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <MaterialIcon type={m.file_type} />
-                        </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-foreground">{m.title}</p>
                           <p className="text-xs text-muted-foreground">
-                            {m.file_size} &bull; {new Date(m.created_at).toLocaleDateString()}
+                            {new Date(m.created_at).toLocaleDateString()}
                           </p>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            {m.status === 'draft' ? (
-                              <Badge variant="outline" className="h-4 text-[10px]">Draft</Badge>
-                            ) : (
-                              <Badge variant="secondary" className="h-4 gap-1 text-[10px]">
-                                <CheckCircle className="h-2.5 w-2.5" />
-                                Published
-                              </Badge>
-                            )}
+                            <Badge variant="secondary" className="h-4 gap-1 text-[10px]">
+                              <CheckCircle className="h-2.5 w-2.5" />
+                              Published
+                            </Badge>
                             {m.subject && (
                               <span className="truncate text-[10px] text-muted-foreground">
                                 {m.subject}

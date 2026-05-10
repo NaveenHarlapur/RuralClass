@@ -34,7 +34,7 @@ export default function StudentAnnouncementsPage() {
   useEffect(() => {
     fetchAnnouncements()
 
-    // Realtime subscription — auto-update when teacher posts
+    // Realtime subscription — auto-update when teacher posts or deletes
     const channel = supabase
       .channel("announcements-realtime")
       .on(
@@ -43,6 +43,22 @@ export default function StudentAnnouncementsPage() {
         (payload) => {
           console.log("[Student] New announcement received:", payload.new)
           setAnnouncements((prev) => [payload.new, ...prev])
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "announcements" },
+        (payload) => {
+          console.log("[Student] Announcement deleted:", payload.old.id)
+          setAnnouncements((prev) => prev.filter(a => a.id !== payload.old.id))
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "announcements" },
+        (payload) => {
+          console.log("[Student] Announcement updated:", payload.new.id)
+          setAnnouncements((prev) => prev.map(a => a.id === payload.new.id ? payload.new : a))
         }
       )
       .subscribe()

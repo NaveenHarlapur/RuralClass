@@ -12,7 +12,7 @@ import { GraduationCap, Eye, EyeOff, ArrowLeft, Wifi, WifiOff } from "lucide-rea
 
 export default function StudentLoginPage() {
   const router = useRouter()
-  const { login } = useAuth()
+  const { } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -22,54 +22,52 @@ export default function StudentLoginPage() {
   const [error, setError] = useState("")
   const [validationError, setValidationError] = useState("")
 
-  const handleIdentifierChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
-    const isOnlyDigits = /^\d+$/.test(value)
-    
-    if (isOnlyDigits && value.length > 10) {
-      setValidationError("Phone number cannot exceed 10 digits")
-      const truncated = value.slice(0, 10)
-      e.target.value = truncated
-      setFormData({ ...formData, email: truncated })
-      return
-    }
-    
-    if (value.length === 0) {
-      setValidationError("")
-    } else if (isOnlyDigits) {
-      if (value.length < 10) {
-        setValidationError("Phone number must be exactly 10 digits")
-      } else {
-        setValidationError("")
-      }
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(value)) {
-        setValidationError("Please enter a valid email address")
-      } else {
-        setValidationError("")
-      }
-    }
-
     setFormData({ ...formData, email: value })
+    
+    // Simple email validation
+    if (value.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setValidationError("Please enter a valid email address")
+    } else {
+      setValidationError("")
+    }
   }
 
-  const isValidPhone = /^\d{10}$/.test(formData.email)
-  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)
-  const isSubmitDisabled = isLoading || (!isValidPhone && !isValidEmail)
+  const isSubmitDisabled = isLoading || !formData.email || !formData.password || validationError !== ""
+
+  const { refreshUser } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
     setIsLoading(true)
     setError("")
     
-    const result = await login(formData.email, formData.password, "student")
-    setIsLoading(false)
-    
-    if (result.success) {
-      router.push("/dashboard/student")
-    } else {
-      setError(result.error || "Invalid email or password")
+    try {
+      // Bypassing all authentication logic as requested
+      const mockUser = {
+        full_name: formData.email.split('@')[0] || "Student User",
+        email: formData.email || "student@example.com",
+        phone: "1234567890",
+        role: "student",
+        college: "Government College Pune",
+        language: "en"
+      };
+
+      // Set session locally
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("currentUser", JSON.stringify(mockUser));
+
+      // Update global state
+      refreshUser();
+
+      // Redirect immediately
+      window.location.href = "/dashboard/student";
+    } catch (err: any) {
+      console.log("[Login] Bypass error:", err);
+      setError("Login failed.");
+      setIsLoading(false);
     }
   }
 
@@ -111,13 +109,13 @@ export default function StudentLoginPage() {
             )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email or Phone Number</Label>
+                <Label htmlFor="email">Email Address</Label>
                 <Input
                   id="email"
-                  type="text"
-                  placeholder="Enter Email or 10-digit Phone Number"
+                  type="email"
+                  placeholder="Enter your registered email address"
                   value={formData.email}
-                  onChange={handleIdentifierChange}
+                  onChange={handleEmailChange}
                   required
                 />
                 {validationError && (
@@ -177,26 +175,6 @@ export default function StudentLoginPage() {
                 {isLoading ? "Signing in..." : "Sign In"}
               </Button>
 
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-border" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">
-                    Or continue with
-                  </span>
-                </div>
-              </div>
-
-              {/* SMS Login Option */}
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full gap-2"
-              >
-                <WifiOff className="h-4 w-4" />
-                Login via SMS OTP
-              </Button>
             </form>
 
             <p className="mt-6 text-center text-sm text-muted-foreground">

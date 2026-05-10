@@ -22,11 +22,20 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
+import { supabase } from "@/lib/supabase"
+import { CheckCircle, XCircle } from "lucide-react"
 
 export default function TeacherDashboardPage() {
   const { user } = useAuth()
   const [data, setData] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [attendanceStats, setAttendanceStats] = useState({ 
+    present: 0, 
+    absent: 0, 
+    noClass: 0,
+    totalClasses: 0
+  })
+  const [totalStudents, setTotalStudents] = useState(0)
 
   useEffect(() => {
     async function fetchDashboard() {
@@ -36,8 +45,41 @@ export default function TeacherDashboardPage() {
           const json = await res.json()
           setData(json)
         }
+        
+        // 1. Get total students from localStorage
+        const mockUsers = JSON.parse(localStorage.getItem("mockUsers") || "[]")
+        const studentCount = mockUsers.filter((u: any) => u.role === "student").length
+        setTotalStudents(studentCount)
+
+        // 2. Get cumulative attendance stats
+        const { data: attData, error: attError } = await supabase
+          .from("attendance")
+          .select("status, attendance_date")
+        
+        if (!attError && attData) {
+          const present = attData.filter(a => a.status === "PRESENT").length
+          const absent = attData.filter(a => a.status === "ABSENT").length
+          
+          const uniqueNoClassDates = [...new Set(
+            attData
+              .filter(a => a.status === "NO_CLASS")
+              .map(a => a.attendance_date)
+          )]
+          
+          const uniqueClassDates = [...new Set(
+            attData.map(a => a.attendance_date)
+          )]
+
+          setAttendanceStats({ 
+            present, 
+            absent, 
+            noClass: uniqueNoClassDates.length,
+            totalClasses: uniqueClassDates.length
+          })
+        }
+
       } catch (error) {
-        console.error("Failed to fetch dashboard", error)
+        console.log("Dashboard fetch error:", error)
       } finally {
         setIsLoading(false)
       }
@@ -60,8 +102,14 @@ export default function TeacherDashboardPage() {
     totalMaterials: 0,
     totalSubmissions: 0,
   }
+
+  // Override total students with localStorage count
+  stats.totalStudents = totalStudents
   const recentSubmissions = data?.recentSubmissions || []
-  const registeredStudents = data?.registeredStudents || []
+  
+  // Use mockUsers from localStorage for registered students list
+  const mockUsers = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem("mockUsers") || "[]" : "[]")
+  const registeredStudents = mockUsers.filter((u: any) => u.role === "student")
 
   // Build active classes from courses with real counts
   const activeClasses = courses.map((course: any) => ({
@@ -73,16 +121,53 @@ export default function TeacherDashboardPage() {
     lastActivity: course.notes?.[0]?.createdAt || course.createdAt,
   }))
 
+  const validClassesCount = attendanceStats.totalClasses - attendanceStats.noClass;
+  const attPercentage = (validClassesCount > 0 && totalStudents > 0)
+    ? (attendanceStats.present / (validClassesCount * totalStudents)) * 100
+    : 0;
+
   const quickStats = [
     {
       label: "Total Students",
-      value: stats.totalStudents.toString(),
+      value: totalStudents.toString(),
       icon: Users,
       color: "text-primary",
       bgColor: "bg-primary/10",
-      sub: stats.totalStudents === 0
-        ? "No enrollments yet"
-        : `Across ${stats.totalCourses} course${stats.totalCourses !== 1 ? 's' : ''}`,
+      sub: totalStudents === 0
+        ? "No students registered"
+        : `Across all courses`,
+    },
+    {
+      label: "Total Present",
+      value: attendanceStats.present.toString(),
+      icon: CheckCircle,
+      color: "text-green-500",
+      bgColor: "bg-green-500/10",
+      sub: `${attPercentage.toFixed(0)}% avg attendance`,
+    },
+    {
+      label: "No Class Today",
+      value: attendanceStats.noClass.toString(),
+      icon: Clock,
+      color: "text-orange-500",
+      bgColor: "bg-orange-500/10",
+      sub: "Dates cancelled",
+    },
+    {
+      label: "Total Classes",
+      value: attendanceStats.totalClasses.toString(),
+      icon: Calendar,
+      color: "text-cyan-500",
+      bgColor: "bg-cyan-500/10",
+      sub: "Total unique dates",
+    },
+    {
+      label: "Today's Absent",
+      value: attendanceStats.absent.toString(),
+      icon: XCircle,
+      color: "text-red-500",
+      bgColor: "bg-red-500/10",
+      sub: "Cumulative count",
     },
     {
       label: "Active Courses",
@@ -90,23 +175,7 @@ export default function TeacherDashboardPage() {
       icon: BookOpen,
       color: "text-accent-foreground",
       bgColor: "bg-accent/20",
-      sub: stats.totalCourses === 0 ? "No courses yet" : "All active",
-    },
-    {
-      label: "Materials Uploaded",
-      value: stats.totalMaterials.toString(),
-      icon: FileText,
-      color: "text-chart-2",
-      bgColor: "bg-chart-2/10",
-      sub: stats.totalMaterials === 0 ? "Nothing uploaded yet" : "Published notes",
-    },
-    {
-      label: "Submissions",
-      value: stats.totalSubmissions.toString(),
-      icon: TrendingUp,
-      color: "text-chart-3",
-      bgColor: "bg-chart-3/10",
-      sub: stats.totalSubmissions === 0 ? "No submissions yet" : "Total received",
+      sub: stats.totalCourses === 0 ? "No courses yet" : "Total active",
     },
   ]
 
@@ -139,7 +208,7 @@ export default function TeacherDashboardPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {quickStats.map((stat) => (
           <Card key={stat.label} className="border-border/50">
             <CardContent className="flex items-center gap-4 p-4">

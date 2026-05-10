@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle, XCircle, Save, Calendar as CalendarIcon, Users, BarChart } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Save, Calendar as CalendarIcon, Users, BarChart, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
@@ -18,30 +18,39 @@ export default function TeacherAttendancePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [studentPercentages, setStudentPercentages] = useState<Record<string, number>>({});
+  const [isNoClassDay, setIsNoClassDay] = useState(false);
+  const [cumulativeStats, setCumulativeStats] = useState({
+    present: 0,
+    absent: 0,
+    noClassDays: 0,
+    totalClasses: 0
+  });
 
   const fetchStudents = async () => {
     try {
       setIsLoading(true);
-      const res = await fetch("/api/teacher/students");
-      if (!res.ok) throw new Error("Failed to fetch students");
-      const data = await res.json();
-      setStudents(data);
+      
+      // 1. Load students from localStorage
+      const mockUsers = JSON.parse(localStorage.getItem("mockUsers") || "[]");
+      const studentsList = mockUsers.filter((u: any) => u.role === "student");
+      
+      setStudents(studentsList);
 
-      // Initialize attendance data if not already set
+      // 2. Initialize attendance data if not already set
       const initialData: Record<string, string> = {};
-      data.forEach((student: any) => {
-        initialData[student.email] = "Present"; // Default
+      studentsList.forEach((student: any) => {
+        initialData[student.email] = "NO_CLASS"; // Default as per requirement
       });
       setAttendanceData(initialData);
 
-      // Fetch existing attendance for the selected date
-      await fetchExistingAttendance(data, selectedDate);
+      // 3. Fetch existing attendance for the selected date
+      await fetchExistingAttendance(studentsList, selectedDate);
       
-      // Fetch cumulative stats for each student
-      await fetchCumulativeStats(data);
+      // 4. Fetch cumulative stats for each student
+      await fetchCumulativeStats(studentsList);
 
     } catch (error: any) {
-      console.error("[Teacher] Error fetching students:", error);
+      console.log(error);
       toast.error("Failed to load students");
     } finally {
       setIsLoading(false);
@@ -57,31 +66,55 @@ export default function TeacherAttendancePage() {
       if (error) throw error;
 
       if (data) {
-        const stats: Record<string, { total: number; present: number }> = {};
+        const studentStats: Record<string, { total: number; present: number }> = {};
         
         // Initialize stats for all students
         studentsList.forEach(s => {
-          stats[s.email] = { total: 0, present: 0 };
+          studentStats[s.email] = { total: 0, present: 0 };
         });
 
-        // Calculate counts
+        // 1. Calculate Per-Student Cumulative Stats
+        let totalPresent = 0;
+        let totalAbsent = 0;
+        const allDates = new Set<string>();
+        const noClassDates = new Set<string>();
+
         data.forEach((record: any) => {
-          if (stats[record.student_email]) {
-            stats[record.student_email].total += 1;
-            if (record.status === "Present") {
-              stats[record.student_email].present += 1;
+          const date = record.attendance_date;
+          allDates.add(date);
+
+          if (record.status === "PRESENT") {
+            totalPresent++;
+            if (studentStats[record.student_email]) {
+              studentStats[record.student_email].total++;
+              studentStats[record.student_email].present++;
             }
+          } else if (record.status === "ABSENT") {
+            totalAbsent++;
+            if (studentStats[record.student_email]) {
+              studentStats[record.student_email].total++;
+            }
+          } else if (record.status === "NO_CLASS") {
+            noClassDates.add(date);
           }
         });
 
-        // Calculate percentages
+        // 2. Calculate Student Percentages
         const percentages: Record<string, number> = {};
-        Object.keys(stats).forEach(email => {
-          const { total, present } = stats[email];
+        Object.keys(studentStats).forEach(email => {
+          const { total, present } = studentStats[email];
           percentages[email] = total > 0 ? (present / total) * 100 : 0;
         });
 
         setStudentPercentages(percentages);
+        
+        // 3. Update Overall Cumulative Stats
+        setCumulativeStats({
+          present: totalPresent,
+          absent: totalAbsent,
+          noClassDays: noClassDates.size,
+          totalClasses: allDates.size
+        });
       }
     } catch (error) {
       console.error("[Teacher] Error fetching cumulative stats:", error);
@@ -102,16 +135,34 @@ export default function TeacherAttendancePage() {
         data.forEach((record: any) => {
           existingData[record.student_email] = record.status;
         });
-        
-        // Merge with full student list (those not marked will be "Present" by default)
+
+        // Merge with full student list (those not marked will be "NO_CLASS" by default)
         const mergedData: Record<string, string> = {};
+        let noClassCount = 0;
         studentsList.forEach((s: any) => {
-          mergedData[s.email] = existingData[s.email] || "Present";
+          const status = existingData[s.email] || "NO_CLASS";
+          mergedData[s.email] = status;
+          if (status === "NO_CLASS") noClassCount++;
         });
         setAttendanceData(mergedData);
+        
+        // If all students are marked as NO_CLASS, set the global toggle to true
+        if (studentsList.length > 0 && noClassCount === studentsList.length) {
+          setIsNoClassDay(true);
+        } else {
+          setIsNoClassDay(false);
+        }
+      } else {
+        // No records for this date
+        setIsNoClassDay(false);
+        const initialData: Record<string, string> = {};
+        studentsList.forEach((s: any) => {
+          initialData[s.email] = "NO_CLASS";
+        });
+        setAttendanceData(initialData);
       }
     } catch (error) {
-      console.error("[Teacher] Error fetching existing attendance:", error);
+      console.log(error);
     }
   };
 
@@ -120,50 +171,99 @@ export default function TeacherAttendancePage() {
   }, [selectedDate]);
 
   const handleStatusChange = (email: string, status: string) => {
+    if (isNoClassDay) return;
     setAttendanceData(prev => ({ ...prev, [email]: status }));
+  };
+
+  const toggleNoClassDay = () => {
+    const newState = !isNoClassDay;
+    setIsNoClassDay(newState);
+    
+    if (newState) {
+      // Set everyone to NO_CLASS
+      const updatedData: Record<string, string> = {};
+      students.forEach(s => {
+        updatedData[s.email] = "NO_CLASS";
+      });
+      setAttendanceData(updatedData);
+    }
   };
 
   const handleSaveAttendance = async () => {
     setIsSaving(true);
     try {
-      const recordsToUpsert = students.map(student => ({
-        student_name: student.name,
-        student_email: student.email,
-        status: attendanceData[student.email],
-        attendance_date: selectedDate,
-        marked_by: user?.name || "Teacher",
-      }));
+      // Loop through students and save one by one to ensure proper upsert/check
+      for (const student of students) {
+        const status = attendanceData[student.email] || "NO_CLASS";
+        
+        // Check if exists
+        const { data: existing, error: checkError } = await supabase
+          .from("attendance")
+          .select("id")
+          .eq("attendance_date", selectedDate)
+          .eq("student_email", student.email)
+          .single();
+        
+        if (checkError && checkError.code !== "PGRST116") { // PGRST116 is "not found"
+           console.log("Check error:", checkError);
+        }
 
-      const { error } = await supabase
-        .from("attendance")
-        .upsert(recordsToUpsert, { onConflict: 'student_email,attendance_date' });
+        if (existing) {
+          // Update
+          const { error: updateError } = await supabase
+            .from("attendance")
+            .update({ status })
+            .eq("id", existing.id);
+          
+          if (updateError) {
+            console.log(updateError);
+            throw updateError;
+          }
+        } else {
+          // Insert
+          const { error: insertError } = await supabase
+            .from("attendance")
+            .insert([{
+              student_email: student.email,
+              student_name: student.name,
+              status: status,
+              attendance_date: selectedDate
+            }]);
 
-      if (error) throw error;
+          if (insertError) {
+            console.log(insertError);
+            throw insertError;
+          }
+        }
+      }
 
-      toast.success(`Attendance saved for ${selectedDate}`);
+      toast.success("Attendance saved successfully");
       
       // Refresh stats after save
       await fetchCumulativeStats(students);
 
     } catch (error: any) {
-      console.error("[Teacher] Error saving attendance:", error);
-      toast.error(error.message || "Failed to save attendance");
+      console.log(error);
+      toast.error("Failed to save attendance");
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Analytics
+  // Analytics (Cumulative)
   const totalStudents = students.length;
-  const presentCount = Object.values(attendanceData).filter(s => s === "Present").length;
-  const absentCount = Object.values(attendanceData).filter(s => s === "Absent").length;
-  const attendancePercentage = totalStudents > 0 ? (presentCount / totalStudents) * 100 : 0;
+  const { present: cumPresent, absent: cumAbsent, noClassDays, totalClasses } = cumulativeStats;
+  
+  const totalValidClasses = totalClasses - noClassDays;
+  const attendancePercentage = (totalValidClasses > 0 && totalStudents > 0) 
+    ? (cumPresent / (totalValidClasses * totalStudents)) * 100 
+    : 0;
 
   if (isLoading) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-3 text-lg font-medium">Loading students...</span>
+        <span className="ml-3 text-lg font-medium">Loading attendance...</span>
       </div>
     );
   }
@@ -186,8 +286,8 @@ export default function TeacherAttendancePage() {
         </div>
       </div>
 
-      {/* Analytics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Analytics Cards (Cumulative) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card className="border-border/50 bg-card/50">
           <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm font-medium">Total Students</CardTitle>
@@ -203,7 +303,7 @@ export default function TeacherAttendancePage() {
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-500">{presentCount}</div>
+            <div className="text-2xl font-bold text-green-500">{cumPresent}</div>
           </CardContent>
         </Card>
         <Card className="border-border/50 bg-card/50">
@@ -212,7 +312,25 @@ export default function TeacherAttendancePage() {
             <XCircle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-500">{absentCount}</div>
+            <div className="text-2xl font-bold text-red-500">{cumAbsent}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/50 bg-card/50">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-orange-500">No Class</CardTitle>
+            <Clock className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-500">{noClassDays}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/50 bg-card/50">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm font-medium text-cyan-500">Total Classes</CardTitle>
+            <CalendarIcon className="h-4 w-4 text-cyan-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-cyan-500">{totalClasses}</div>
           </CardContent>
         </Card>
         <Card className="border-border/50 bg-card/50">
@@ -227,58 +345,77 @@ export default function TeacherAttendancePage() {
       </div>
 
       <Card className="border-border/50 bg-card/50">
-        <CardHeader>
-          <CardTitle>Students List</CardTitle>
-          <CardDescription>Mark attendance for {new Date(selectedDate).toLocaleDateString()}</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Students List</CardTitle>
+            <CardDescription>Mark attendance for {new Date(selectedDate).toLocaleDateString()}</CardDescription>
+          </div>
+          <Button
+            variant={isNoClassDay ? "default" : "secondary"}
+            className={isNoClassDay ? "bg-orange-500 hover:bg-orange-600 text-white" : ""}
+            onClick={toggleNoClassDay}
+          >
+            {isNoClassDay ? "Class Cancelled Today" : "No Class Today"}
+          </Button>
         </CardHeader>
         <CardContent>
-          <div className="border rounded-md overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium">Student Name</th>
-                  <th className="px-4 py-3 text-left font-medium">Email</th>
-                  <th className="px-4 py-3 text-center font-medium">Cumulative %</th>
-                  <th className="px-4 py-3 text-right font-medium">Daily Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {students.map((student) => {
-                  const percentage = studentPercentages[student.email] || 0;
-                  return (
-                    <tr key={student.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3 font-medium">{student.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{student.email}</td>
-                      <td className="px-4 py-3 text-center">
-                        <Badge variant={percentage >= 75 ? "outline" : "destructive"} className="font-mono">
-                          {percentage.toFixed(1)}%
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant={attendanceData[student.email] === "Present" ? "default" : "outline"}
-                            className={attendanceData[student.email] === "Present" ? "bg-green-600 hover:bg-green-700" : ""}
-                            onClick={() => handleStatusChange(student.email, "Present")}
-                          >
-                            Present
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={attendanceData[student.email] === "Absent" ? "destructive" : "outline"}
-                            onClick={() => handleStatusChange(student.email, "Absent")}
-                          >
-                            Absent
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {students.length > 0 ? (
+            <div className="border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 border-b">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Student Name</th>
+                    <th className="px-4 py-3 text-left font-medium">Email</th>
+                    <th className="px-4 py-3 text-center font-medium">Cumulative %</th>
+                    <th className="px-4 py-3 text-right font-medium">Daily Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {students.map((student) => {
+                    const percentage = studentPercentages[student.email] || 0;
+                    return (
+                      <tr key={student.email} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3 font-medium">{student.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{student.email}</td>
+                        <td className="px-4 py-3 text-center">
+                          <Badge variant={percentage >= 75 ? "outline" : "destructive"} className="font-mono">
+                            {percentage.toFixed(1)}%
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant={attendanceData[student.email] === "PRESENT" ? "default" : "outline"}
+                              className={attendanceData[student.email] === "PRESENT" ? "bg-green-600 hover:bg-green-700" : ""}
+                              onClick={() => handleStatusChange(student.email, "PRESENT")}
+                              disabled={isNoClassDay}
+                            >
+                              Present
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={attendanceData[student.email] === "ABSENT" ? "destructive" : "outline"}
+                              onClick={() => handleStatusChange(student.email, "ABSENT")}
+                              disabled={isNoClassDay}
+                            >
+                              Absent
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-lg">
+              <Users className="h-12 w-12 text-muted-foreground/30 mb-3" />
+              <p className="text-lg font-medium text-foreground">No students registered</p>
+              <p className="text-sm text-muted-foreground">Students will appear here once they register.</p>
+            </div>
+          )}
         </CardContent>
         <CardFooter className="bg-muted/20 border-t pt-4 flex justify-end">
           <Button 

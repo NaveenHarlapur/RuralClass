@@ -162,4 +162,14 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: var(--foreground);
   }
+
+  @keyframes progress-indefinite {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  .animate-progress-indefinite {
+    animation: progress-indefinite 1.5s infinite linear;
+    width: 200%;
+  }
 }

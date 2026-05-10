@@ -23,11 +23,13 @@ import {
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 import { toast } from "sonner"
+import { supabase } from "@/lib/supabase"
 
 export default function StudentDashboardPage() {
   const { user } = useAuth()
   const [data, setData] = useState<any>(null)
   const [availableCourses, setAvailableCourses] = useState<any[]>([])
+  const [recentStudyMaterials, setRecentStudyMaterials] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isEnrolling, setIsEnrolling] = useState<string | null>(null)
 
@@ -41,6 +43,35 @@ export default function StudentDashboardPage() {
       }
     } catch (error) {
       console.error("Failed to fetch dashboard", error)
+    }
+  }
+
+  const fetchRecentMaterials = async () => {
+    try {
+      const { data: materials, error } = await supabase
+        .from('study_materials')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(4)
+      
+      if (error) {
+        console.log("[Dashboard] Materials fetch error:", error)
+        return
+      }
+      
+      if (materials) {
+        setRecentStudyMaterials(materials.map(m => ({
+          id: m.id,
+          title: m.title,
+          subject: m.subject || 'General',
+          date: new Date(m.created_at).toLocaleDateString(),
+          size: 'Unknown',
+          offline: false,
+          url: m.file_url
+        })))
+      }
+    } catch (error) {
+      console.error("Failed to fetch materials", error)
     }
   }
 
@@ -59,10 +90,7 @@ export default function StudentDashboardPage() {
   useEffect(() => {
     const loadAll = async () => {
       setIsLoading(true)
-      await Promise.all([fetchDashboard(), fetchAvailableCourses()])
-      
-
-      
+      await Promise.all([fetchDashboard(), fetchAvailableCourses(), fetchRecentMaterials()])
       setIsLoading(false)
     }
     loadAll()
@@ -158,7 +186,7 @@ export default function StudentDashboardPage() {
     },
     {
       label: "Total Notes",
-      value: totalNotes.toString(),
+      value: (totalNotes + recentStudyMaterials.length).toString(),
       icon: Download,
       color: "text-chart-3",
       bgColor: "bg-chart-3/10",
@@ -230,14 +258,14 @@ export default function StudentDashboardPage() {
               </Link>
             </CardHeader>
             <CardContent>
-              {recentNotes.length === 0 ? (
+              {recentStudyMaterials.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <BookOpen className="h-12 w-12 text-muted-foreground/50 mb-3" />
                   <p className="text-muted-foreground">No notes uploaded yet</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {recentNotes.map((note, index) => (
+                  {recentStudyMaterials.map((note, index) => (
                     <div
                       key={index}
                       className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 p-3 transition-colors hover:bg-muted/50"
@@ -249,18 +277,12 @@ export default function StudentDashboardPage() {
                         <div>
                           <p className="font-medium text-foreground">{note.title}</p>
                           <p className="text-xs text-muted-foreground">
-                            {note.subject} • {note.date} • {note.size}
+                            {note.subject} • {note.date}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {note.offline && (
-                          <Badge variant="secondary" className="gap-1 text-xs">
-                            <WifiOff className="h-3 w-3" />
-                            Offline
-                          </Badge>
-                        )}
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => note.url && window.open(note.url, '_blank')}>
                           <Download className="h-4 w-4" />
                         </Button>
                       </div>

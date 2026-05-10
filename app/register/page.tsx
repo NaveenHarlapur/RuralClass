@@ -19,7 +19,7 @@ import { useAuth } from "@/contexts/auth-context"
 
 export default function RegisterPage() {
   const router = useRouter()
-  const { login, updateUser } = useAuth()
+  const { } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -62,30 +62,48 @@ export default function RegisterPage() {
     setFormData({ ...formData, phone: value })
   }
 
+  const { refreshUser } = useAuth()
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
     setIsLoading(true)
     setError("")
     
     try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      })
+      // Bypassing all authentication logic as requested
+      const newUser = {
+        name: formData.name || "New User",
+        email: formData.email || "user@example.com",
+        phone: formData.phone || "0000000000",
+        role: formData.role,
+        college: formData.college,
+        language: formData.language,
+        createdAt: new Date().toISOString()
+      };
+
+      // 1. Store ALL users in mockUsers
+      const existingUsers = JSON.parse(localStorage.getItem("mockUsers") || "[]");
       
-      const data = await res.json()
+      // Prevent duplicate emails in mockUsers if needed
+      const otherUsers = existingUsers.filter((u: any) => u.email !== newUser.email);
+      const updatedUsers = [...otherUsers, newUser];
       
-      if (res.ok) {
-        // Hard redirect to force AuthContext reload
-        window.location.href = `/dashboard/${formData.role}`
-      } else {
-        setError(data.error || "Registration failed")
-        setIsLoading(false)
-      }
-    } catch (err) {
-      setError("An unexpected error occurred")
-      setIsLoading(false)
+      localStorage.setItem("mockUsers", JSON.stringify(updatedUsers));
+
+      // 2. Set current user and login status
+      localStorage.setItem("currentUser", JSON.stringify(newUser));
+      localStorage.setItem("isLoggedIn", "true");
+
+      // Update global state
+      refreshUser();
+
+      // Redirect immediately to dashboard
+      window.location.href = `/dashboard/${formData.role}`;
+    } catch (err: any) {
+      console.log("[Register] Bypass error:", err);
+      setError("Registration failed.");
+      setIsLoading(false);
     }
   }
 
